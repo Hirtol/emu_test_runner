@@ -4,11 +4,8 @@ use std::sync::Arc;
 use image::{EncodableLayout, ImageBuffer};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::outputs::{
-    TestOutput, TestOutputChanged, TestOutputContext, TestOutputError, TestOutputFailure, TestOutputPassed,
-    TestOutputType, TestOutputUnchanged,
-};
-use crate::{setup, RunnerError, RunnerOutput};
+use crate::outputs::{TestChanged, TestError, TestFailed, TestOutput, TestOutputChanged, TestOutputContext, TestOutputError, TestOutputFailure, TestOutputPassed, TestOutputType, TestOutputUnchanged, TestPassed, TestUnchanged};
+use crate::{RunnerError, RunnerOutput, setup};
 
 pub fn process_results(
     results: Vec<Result<RunnerOutput, RunnerError>>,
@@ -106,5 +103,75 @@ impl From<RunnerError> for TestOutput {
                 reason: Arc::new(error),
             }),
         })
+    }
+}
+
+pub struct TestReport {
+    pub test_outputs: Vec<TestOutput>,
+    pub passed: Vec<TestPassed>,
+    pub unchanged: Vec<TestUnchanged>,
+    pub fails: Vec<TestFailed>,
+    pub changed: Vec<TestChanged>,
+    pub errors: Vec<TestError>,
+}
+
+impl TestReport {
+    pub(crate) fn new(test_outputs: Vec<TestOutput>) -> Self {
+        let (mut passed, mut fails, mut unchanged, mut changed, mut errors) = (vec![], vec![], vec![], vec![], vec![]);
+
+        for report in test_outputs.clone() {
+            let rom_path = report.rom_path;
+            let rom_id = report.rom_id;
+            let ctx = report.context;
+
+            match ctx.output {
+                TestOutputType::Unchanged(same) => unchanged.push(TestUnchanged {
+                    rom_path,
+                    rom_id,
+                    context: TestOutputContext {
+                        time_taken: ctx.time_taken,
+                        output: same,
+                    },
+                }),
+                TestOutputType::Changed(changes) => changed.push(TestChanged {
+                    rom_path,
+                    rom_id,
+                    context: TestOutputContext {
+                        time_taken: ctx.time_taken,
+                        output: changes,
+                    },
+                }),
+                TestOutputType::Failure(fail) => fails.push(TestFailed {
+                    rom_path,
+                    rom_id,
+                    context: TestOutputContext {
+                        time_taken: ctx.time_taken,
+                        output: fail,
+                    },
+                }),
+                TestOutputType::Passed(pass) => passed.push(TestPassed {
+                    rom_path,
+                    rom_id,
+                    context: TestOutputContext {
+                        time_taken: ctx.time_taken,
+                        output: pass,
+                    },
+                }),
+                TestOutputType::Error(error) => errors.push(TestError {
+                    rom_path,
+                    rom_id,
+                    context: error,
+                }),
+            }
+        }
+
+        Self {
+            test_outputs,
+            passed,
+            unchanged,
+            fails,
+            changed,
+            errors,
+        }
     }
 }

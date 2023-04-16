@@ -1,17 +1,8 @@
-use std::time::Duration;
-
-pub use indicatif;
+use crate::formatters::EmuTestResultFormatter;
+use crate::outputs::{RunnerError, RunnerOutput};
 use owo_colors::{CssColors, OwoColorize};
-
-use crate::outputs::{RunnerError, RunnerOutput, TestReport};
-
-pub trait EmuTestResultFormatter {
-    fn handle_start(&self, test_count: usize) -> anyhow::Result<()>;
-
-    fn handle_test_progress(&self, test_complete: &Result<RunnerOutput, RunnerError>) -> anyhow::Result<()>;
-
-    fn handle_complete(&self, report: &TestReport, time_taken: Duration) -> anyhow::Result<()>;
-}
+use std::time::Duration;
+use crate::processing::TestReport;
 
 #[derive(Default)]
 pub struct SimpleConsoleFormatter {
@@ -40,7 +31,7 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
         Ok(())
     }
 
-    fn handle_test_progress(&self, _test_complete: &Result<RunnerOutput, RunnerError>) -> anyhow::Result<()> {
+    fn handle_test_progress(&self, _test_complete: Result<&RunnerOutput, &RunnerError>) -> anyhow::Result<()> {
         if let Some(progress) = self.progress.as_ref() {
             progress.inc(1)
         }

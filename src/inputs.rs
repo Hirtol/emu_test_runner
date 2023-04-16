@@ -7,6 +7,9 @@ pub struct TestCandidate {
 }
 
 impl TestCandidate {
+    /// Create a new test candidate.
+    ///
+    /// The `id` should be unique, and the path should point to a ROM that can be loaded by the emulator under test.
     pub fn new(id: impl Into<String>, path: impl Into<PathBuf>) -> TestCandidate {
         Self {
             rom_id: id.into(),
@@ -14,6 +17,7 @@ impl TestCandidate {
         }
     }
 
+    /// Find all possible test candidates in a directory and all its sub-directories based on a given file extension.
     pub fn find_all_in_directory(
         path: impl AsRef<Path>,
         extension: impl AsRef<str>,

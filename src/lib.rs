@@ -3,12 +3,13 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::Context;
+use processing::TestReport;
 use rayon::prelude::*;
 
 use crate::formatters::EmuTestResultFormatter;
 use crate::inputs::TestCandidate;
 use crate::options::EmuRunnerOptions;
-use crate::outputs::{RgbaFrame, RunnerError, RunnerOutput, RunnerOutputContext, TestReport};
+use crate::outputs::{RgbaFrame, RunnerError, RunnerOutput, RunnerOutputContext};
 
 pub mod formatters;
 pub mod inputs;
@@ -25,6 +26,9 @@ pub struct EmuTestRunner {
 }
 
 impl EmuTestRunner {
+    /// Instantiate a new test runner with the given formatter and options.
+    ///
+    /// Will create a new [rayon::ThreadPool] for executing the tests on.
     pub fn new(
         formatter: Box<dyn EmuTestResultFormatter + Send + Sync>,
         options: EmuRunnerOptions,
@@ -43,75 +47,79 @@ impl EmuTestRunner {
         })
     }
 
-    pub fn run_tests<C, F, I>(&self, tests: I, context: C, emu_run: F) -> anyhow::Result<()>
+    /// Run the given tests and pass the results to the `formatter`.
+    ///
+    /// Any panic that occurs during the test execution is caught and can be reported on by the `formatter`.
+    pub fn run_tests<F, I>(&self, tests: I, emu_run: F) -> anyhow::Result<()>
     where
-        F: Fn(&TestCandidate, Vec<u8>, &C) -> RgbaFrame
-            + Send
-            + Sync
-            + std::panic::UnwindSafe
-            + std::panic::RefUnwindSafe,
+        F: Fn(&TestCandidate, Vec<u8>) -> RgbaFrame + Send + Sync + std::panic::RefUnwindSafe,
         I: ExactSizeIterator<Item = TestCandidate> + Send,
-        C: Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe,
     {
         self.formatter.handle_start(tests.len())?;
 
         let start = Instant::now();
 
-        let frame_results = crate::panics::run_in_custom_handler(|| {
-            self.thread_pool.install(|| {
-                tests
-                    .par_bridge()
-                    .map(|rom| {
-                        let runner_output =
-                            std::fs::read(&rom.rom_path)
-                                .context("Couldn't read ROM")
-                                .and_then(|rom_data| {
-                                    let now = Instant::now();
-
-                                    let frame = std::panic::catch_unwind(|| emu_run(&rom, rom_data, &context));
-
-                                    let frame = match frame {
-                                        Ok(frame) => Ok(frame),
-                                        Err(e) => Err(anyhow::anyhow!(
-                                            "Caught an emulator panic: `{}`",
-                                            panics::correlate(&rom.rom_path.as_os_str().to_string_lossy())
-                                        )),
-                                    }?;
-
-                                    Ok(RunnerOutput {
-                                        rom_path: rom.rom_path.clone(),
-                                        rom_id: rom.rom_id.clone(),
-                                        context: RunnerOutputContext {
-                                            time_taken: now.elapsed(),
-                                            frame_output: frame,
-                                        },
-                                    })
-                                });
-
-                        let result = runner_output.map_err(|e| RunnerError {
-                            rom_path: rom.rom_path,
-                            rom_id: rom.rom_id,
-                            context: e,
-                        });
-
-                        let _ = self.formatter.handle_test_progress(&result);
-
-                        result
-                    })
-                    .collect::<Vec<_>>()
-            })
+        let frame_results = panics::run_in_custom_handler(|| {
+            self.thread_pool
+                .install(|| self.run_tests_in_panic_handler(tests, emu_run))
         });
-
-        let results = processing::process_results(
+        let test_results = processing::process_results(
             frame_results,
             &self.options.output_path,
             &self.options.snapshot_path,
             self.options.expected_frame_width,
             self.options.expected_frame_height,
         );
-        let report = TestReport::new(results);
+
+        let report = TestReport::new(test_results);
 
         self.formatter.handle_complete(&report, start.elapsed())
+    }
+
+    fn run_tests_in_panic_handler<F, I>(&self, tests: I, emu_run: F) -> Vec<Result<RunnerOutput, RunnerError>>
+    where
+        F: Fn(&TestCandidate, Vec<u8>) -> RgbaFrame + Send + Sync + std::panic::RefUnwindSafe,
+        I: ExactSizeIterator<Item = TestCandidate> + Send,
+    {
+        tests
+            .par_bridge()
+            .map(|rom| {
+                let runner_output = std::fs::read(&rom.rom_path)
+                    .context("Couldn't read ROM")
+                    .and_then(|rom_data| {
+                        let now = Instant::now();
+
+                        let frame = std::panic::catch_unwind(|| emu_run(&rom, rom_data));
+
+                        let frame = match frame {
+                            Ok(frame) => Ok(frame),
+                            Err(_) => Err(anyhow::anyhow!(
+                                "Caught an emulator panic: `{}`",
+                                panics::latest_panic().unwrap()
+                            )),
+                        }?;
+
+                        Ok(RunnerOutput {
+                            rom_path: rom.rom_path.clone(),
+                            rom_id: rom.rom_id.clone(),
+                            context: RunnerOutputContext {
+                                time_taken: now.elapsed(),
+                                frame_output: frame,
+                            },
+                        })
+                    });
+
+                let result = runner_output.map_err(|e| RunnerError {
+                    rom_path: rom.rom_path,
+                    rom_id: rom.rom_id,
+                    context: e,
+                });
+
+                let _ = self.formatter.handle_test_progress(result.as_ref());
+
+                result
+            })
+            .collect::<Vec<_>>()
     }
 }
 

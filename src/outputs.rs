@@ -2,75 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub struct TestReport {
-    pub test_outputs: Vec<TestOutput>,
-    pub passed: Vec<TestPassed>,
-    pub unchanged: Vec<TestUnchanged>,
-    pub fails: Vec<TestFailed>,
-    pub changed: Vec<TestChanged>,
-    pub errors: Vec<TestError>,
-}
-
-impl TestReport {
-    pub(crate) fn new(test_outputs: Vec<TestOutput>) -> Self {
-        let (mut passed, mut fails, mut unchanged, mut changed, mut errors) = (vec![], vec![], vec![], vec![], vec![]);
-
-        for report in test_outputs.clone() {
-            let rom_path = report.rom_path;
-            let rom_id = report.rom_id;
-            let ctx = report.context;
-
-            match ctx.output {
-                TestOutputType::Unchanged(same) => unchanged.push(TestUnchanged {
-                    rom_path,
-                    rom_id,
-                    context: TestOutputContext {
-                        time_taken: ctx.time_taken,
-                        output: same,
-                    },
-                }),
-                TestOutputType::Changed(changes) => changed.push(TestChanged {
-                    rom_path,
-                    rom_id,
-                    context: TestOutputContext {
-                        time_taken: ctx.time_taken,
-                        output: changes,
-                    },
-                }),
-                TestOutputType::Failure(fail) => fails.push(TestFailed {
-                    rom_path,
-                    rom_id,
-                    context: TestOutputContext {
-                        time_taken: ctx.time_taken,
-                        output: fail,
-                    },
-                }),
-                TestOutputType::Passed(pass) => passed.push(TestPassed {
-                    rom_path,
-                    rom_id,
-                    context: TestOutputContext {
-                        time_taken: ctx.time_taken,
-                        output: pass,
-                    },
-                }),
-                TestOutputType::Error(error) => errors.push(TestError {
-                    rom_path,
-                    rom_id,
-                    context: error,
-                }),
-            }
-        }
-
-        Self {
-            test_outputs,
-            passed,
-            unchanged,
-            fails,
-            changed,
-            errors,
-        }
-    }
-}
+pub type TestOutput = EmuContext<TestOutputContext<TestOutputType>>;
 
 pub type TestPassed = EmuContext<TestOutputContext<TestOutputPassed>>;
 pub type TestUnchanged = EmuContext<TestOutputContext<TestOutputUnchanged>>;
@@ -78,7 +10,6 @@ pub type TestFailed = EmuContext<TestOutputContext<TestOutputFailure>>;
 pub type TestError = EmuContext<TestOutputError>;
 pub type TestChanged = EmuContext<TestOutputContext<TestOutputChanged>>;
 
-pub type TestOutput = EmuContext<TestOutputContext<TestOutputType>>;
 pub type RunnerError = EmuContext<anyhow::Error>;
 pub type RunnerOutput = EmuContext<RunnerOutputContext>;
 
@@ -148,5 +79,10 @@ pub struct TestOutputError {
     pub reason: Arc<anyhow::Error>,
 }
 
+/// A single frame from the emulator, with the implicit assumption that:
+/// 
+/// `frame.len() == emu.FRAME_WIDTH * emu.FRAME_HEIGHT`
+/// 
+/// Bytes are expected in RGBA format, so one pixel is 32 bits.
 #[derive(Debug)]
 pub struct RgbaFrame(pub Vec<u8>);
