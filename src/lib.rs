@@ -1,15 +1,22 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
-use processing::TestReport;
+use image::{EncodableLayout, ImageBuffer};
 use rayon::prelude::*;
+
+use processing::TestReport;
+pub use setup::{changed_path, failures_path, new_path, old_path};
 
 use crate::formatters::EmuTestResultFormatter;
 use crate::inputs::TestCandidate;
 use crate::options::EmuRunnerOptions;
-use crate::outputs::{FrameOutput, RgbaFrame, RunnerError, RunnerOutput, RunnerOutputContext};
+use crate::outputs::{
+    EmuContext, FrameOutput, RunnerError, RunnerOutput, RunnerOutputContext, TestOutput, TestOutputChanged,
+    TestOutputContext, TestOutputError, TestOutputFailure, TestOutputPassed, TestOutputType, TestOutputUnchanged,
+};
 
 pub mod formatters;
 pub mod inputs;
@@ -18,8 +25,6 @@ pub mod outputs;
 mod panics;
 mod processing;
 mod setup;
-
-pub use setup::{changed_path, failures_path, new_path, old_path};
 
 pub struct EmuTestRunner {
     formatter: Box<dyn EmuTestResultFormatter + Send + Sync>,
@@ -57,7 +62,8 @@ impl EmuTestRunner {
         F: Fn(&TestCandidate, Vec<u8>) -> Vec<FrameOutput> + Send + Sync + std::panic::RefUnwindSafe,
         I: ExactSizeIterator<Item = TestCandidate> + Send,
     {
-        self.formatter.handle_start(tests.len())?;
+        let test_len = tests.len();
+        self.formatter.handle_start(test_len)?;
 
         let start = Instant::now();
 
@@ -65,15 +71,9 @@ impl EmuTestRunner {
             self.thread_pool
                 .install(|| self.run_tests_in_panic_handler(tests, emu_run))
         });
-        let test_results = processing::process_results(
-            frame_results,
-            &self.options.output_path,
-            &self.options.snapshot_path,
-            self.options.expected_frame_width,
-            self.options.expected_frame_height,
-        );
+        let test_results = self.thread_pool.install(|| self.process_results(frame_results));
 
-        let report = TestReport::new(test_results);
+        let report = TestReport::new(test_len, test_results);
 
         self.formatter.handle_complete(&report, start.elapsed())
     }
@@ -85,13 +85,13 @@ impl EmuTestRunner {
     {
         tests
             .par_bridge()
-            .map(|rom| {
-                let runner_output = std::fs::read(&rom.rom_path)
+            .map(|candidate| {
+                let runner_output = std::fs::read(&candidate.rom_path)
                     .context("Couldn't read ROM")
                     .and_then(|rom_data| {
                         let now = Instant::now();
 
-                        let frame = std::panic::catch_unwind(|| emu_run(&rom, rom_data));
+                        let frame = std::panic::catch_unwind(|| emu_run(&candidate, rom_data));
 
                         let frame = match frame {
                             Ok(frame) => Ok(frame),
@@ -102,8 +102,7 @@ impl EmuTestRunner {
                         }?;
 
                         Ok(RunnerOutput {
-                            rom_path: rom.rom_path.clone(),
-                            rom_id: rom.rom_id.clone(),
+                            candidate: candidate.clone(),
                             context: RunnerOutputContext {
                                 time_taken: now.elapsed(),
                                 frame_output: frame,
@@ -111,17 +110,120 @@ impl EmuTestRunner {
                         })
                     });
 
-                let result = runner_output.map_err(|e| RunnerError {
-                    rom_path: rom.rom_path,
-                    rom_id: rom.rom_id,
-                    context: e,
-                });
+                let result = runner_output.map_err(|e| RunnerError { candidate, context: e });
 
                 let _ = self.formatter.handle_test_progress(result.as_ref());
 
                 result
             })
             .collect::<Vec<_>>()
+    }
+
+    pub fn process_results(&self, results: Vec<Result<RunnerOutput, RunnerError>>) -> Vec<TestOutput> {
+        let output = &self.options.output_path;
+        results
+            .into_par_iter()
+            .flat_map(|runner_output| {
+                let runner_output = match runner_output {
+                    Ok(output) => output,
+                    Err(e) => return vec![e.into()],
+                };
+                let lambda = |frame: FrameOutput| {
+                    let image_frame: ImageBuffer<image::Rgba<u8>, &[u8]> = if let Some(img) = ImageBuffer::from_raw(
+                        self.options.expected_frame_width as u32,
+                        self.options.expected_frame_height as u32,
+                        frame.frame.0.as_slice(),
+                    ) {
+                        img
+                    } else {
+                        anyhow::bail!("Failed to turn framebuffer to dynamic image")
+                    };
+
+                    let result_name = setup::rom_id_to_png(&runner_output.candidate.rom_id, frame.tag.as_deref());
+                    let path_suffix =
+                        if runner_output.candidate.is_sequence_test && self.options.put_sequence_tests_in_subfolder {
+                            Path::new(&runner_output.candidate.rom_id).join(result_name)
+                        } else {
+                            Path::new(&result_name).to_path_buf()
+                        };
+
+                    let new_path = setup::new_path(output).join(&path_suffix);
+                    let old_path = setup::old_path(output).join(&path_suffix);
+
+                    std::fs::create_dir_all(new_path.parent().unwrap());
+                    std::fs::create_dir_all(old_path.parent().unwrap());
+
+                    image_frame.save(&new_path)?;
+                    let old_equals_data = |new_data: &[u8]| {
+                        if old_path.exists() {
+                            image::open(&old_path)
+                                .map(|data| data.as_bytes() == new_data)
+                                .unwrap_or(false)
+                        } else {
+                            false
+                        }
+                    };
+
+                    let snapshot = self.options.snapshot_path.join(&path_suffix);
+                    let output = if snapshot.exists() {
+                        // Time to see if our snapshot is still correct
+                        let snapshot_data = image::open(&snapshot)?;
+                        if snapshot_data.as_bytes() != image_frame.as_bytes() {
+                            let failure_path = setup::failures_path(output).join(&path_suffix);
+                            std::fs::create_dir_all(failure_path.parent().unwrap());
+                            std::fs::copy(&new_path, &failure_path)?;
+
+                            TestOutputType::Failure(TestOutputFailure {
+                                failure_path,
+                                snapshot_path: snapshot,
+                                is_new: old_equals_data(snapshot_data.as_bytes()),
+                            })
+                        } else {
+                            TestOutputType::Passed(TestOutputPassed {
+                                is_new: !old_equals_data(snapshot_data.as_bytes()),
+                            })
+                        }
+                    } else {
+                        // Just check if there has been *any* change at all
+                        if !old_equals_data(image_frame.as_bytes()) {
+                            let changed_path = setup::changed_path(output).join(&path_suffix);
+                            std::fs::create_dir_all(changed_path.parent().unwrap());
+                            std::fs::copy(&new_path, &changed_path)?;
+
+                            TestOutputType::Changed(TestOutputChanged { changed_path, old_path })
+                        } else {
+                            TestOutputType::Unchanged(TestOutputUnchanged {
+                                newly_added: !old_path.exists(),
+                            })
+                        }
+                    };
+
+                    Ok(output)
+                };
+
+                runner_output
+                    .context
+                    .frame_output
+                    .into_iter()
+                    .map(|frame| match lambda(frame) {
+                        Ok(output) => EmuContext {
+                            candidate: runner_output.candidate.clone(),
+                            context: TestOutputContext {
+                                time_taken: Some(runner_output.context.time_taken),
+                                output,
+                            },
+                        },
+                        Err(e) => EmuContext {
+                            candidate: runner_output.candidate.clone(),
+                            context: TestOutputContext {
+                                time_taken: Some(runner_output.context.time_taken),
+                                output: TestOutputType::Error(TestOutputError { reason: Arc::new(e) }),
+                            },
+                        },
+                    })
+                    .collect()
+            })
+            .collect()
     }
 }
 

@@ -1,8 +1,8 @@
 use crate::formatters::EmuTestResultFormatter;
 use crate::outputs::{RunnerError, RunnerOutput};
+use crate::processing::TestReport;
 use owo_colors::{CssColors, OwoColorize};
 use std::time::Duration;
-use crate::processing::TestReport;
 
 #[derive(Default)]
 pub struct SimpleConsoleFormatter {
@@ -48,7 +48,7 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
             println!("{}", "== Found errors ==".on_red());
 
             for error in &report.errors {
-                println!("= {}({:?}) =", error.rom_id.red(), error.rom_path);
+                println!("= {}({:?}) =", error.candidate.rom_id.red(), error.candidate.rom_path);
                 println!("Error: {:#?}", error.context);
                 println!()
             }
@@ -58,7 +58,11 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
             println!("{}\n", "== Found failures ==".on_color(CssColors::DarkCyan));
 
             for fail in &report.fails {
-                println!("= {}({:?}) =", fail.rom_id.color(CssColors::DarkCyan), fail.rom_path);
+                println!(
+                    "= {}({:?}) =",
+                    fail.candidate.rom_id.color(CssColors::DarkCyan),
+                    fail.candidate.rom_path
+                );
                 println!("Failed snapshot test",);
                 println!("Was: {:?}", fail.context.output.failure_path);
                 println!("Expected: {:?}", fail.context.output.snapshot_path);
@@ -72,8 +76,8 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
             for change in &report.changed {
                 println!(
                     "= {}({:?}) =",
-                    change.rom_id.color(CssColors::RebeccaPurple),
-                    change.rom_path
+                    change.candidate.rom_id.color(CssColors::RebeccaPurple),
+                    change.candidate.rom_path
                 );
                 println!("Changed: {:?}", change.context.output.changed_path);
                 println!()

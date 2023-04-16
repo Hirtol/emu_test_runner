@@ -1,6 +1,9 @@
+use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+
+use crate::inputs::TestCandidate;
 
 pub type TestOutput = EmuContext<TestOutputContext<TestOutputType>>;
 
@@ -15,24 +18,21 @@ pub type RunnerOutput = EmuContext<RunnerOutputContext>;
 
 #[derive(Debug, Clone)]
 pub struct EmuContext<T> {
-    pub rom_path: PathBuf,
-    pub rom_id: String,
+    pub candidate: TestCandidate,
     pub context: T,
 }
 
 impl<T> EmuContext<T> {
     pub fn map<E, F: FnOnce(&T) -> E>(&self, op: F) -> EmuContext<E> {
         EmuContext {
-            rom_path: self.rom_path.clone(),
-            rom_id: self.rom_id.clone(),
+            candidate: self.candidate.clone(),
             context: op(&self.context),
         }
     }
 
     pub fn owned_map<E, F: FnOnce(T) -> E>(self, op: F) -> EmuContext<E> {
         EmuContext {
-            rom_path: self.rom_path,
-            rom_id: self.rom_id,
+            candidate: self.candidate,
             context: op(self.context),
         }
     }
@@ -98,5 +98,10 @@ pub struct FrameOutput {
 /// `frame.len() == emu.FRAME_WIDTH * emu.FRAME_HEIGHT`
 ///
 /// Bytes are expected in RGBA format, so one pixel is 32 bits.
-#[derive(Debug)]
 pub struct RgbaFrame(pub Vec<u8>);
+
+impl Debug for RgbaFrame {
+    fn fmt(&self, f: &mut Formatter) -> ::core::fmt::Result {
+        Formatter::debug_tuple(f, "RgbaFrame").field(&self.0.len()).finish()
+    }
+}
