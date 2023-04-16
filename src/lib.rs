@@ -204,7 +204,7 @@ impl EmuTestRunner {
                 let changed_path = path_def.changed_path_with_suffix("new")?;
                 std::fs::copy(&new_path, &changed_path)?;
 
-                if self.options.copy_comparison_image {
+                if self.options.copy_comparison_image && old_path.exists() {
                     let old_file_in_changed_path = path_def.changed_path_with_suffix("old")?;
                     std::fs::copy(&old_path, old_file_in_changed_path)?;
                 }
