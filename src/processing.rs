@@ -4,8 +4,11 @@ use std::sync::Arc;
 use image::{EncodableLayout, ImageBuffer};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::outputs::{TestChanged, TestError, TestFailed, TestOutput, TestOutputChanged, TestOutputContext, TestOutputError, TestOutputFailure, TestOutputPassed, TestOutputType, TestOutputUnchanged, TestPassed, TestUnchanged};
-use crate::{RunnerError, RunnerOutput, setup};
+use crate::outputs::{
+    TestChanged, TestError, TestFailed, TestOutput, TestOutputChanged, TestOutputContext, TestOutputError,
+    TestOutputFailure, TestOutputPassed, TestOutputType, TestOutputUnchanged, TestPassed, TestUnchanged,
+};
+use crate::{setup, RunnerError, RunnerOutput};
 
 pub fn process_results(
     results: Vec<Result<RunnerOutput, RunnerError>>,
@@ -32,7 +35,7 @@ pub fn process_results(
                     anyhow::bail!("Failed to turn framebuffer to dynamic image")
                 };
 
-                let result_name = format!("{}.png", &runner_output.rom_id);
+                let result_name = setup::rom_id_to_png(&runner_output.rom_id);
                 let new_path = setup::new_path(output).join(&result_name);
                 let old_path = setup::old_path(output).join(&result_name);
 

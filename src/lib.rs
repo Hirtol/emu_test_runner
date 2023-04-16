@@ -19,6 +19,8 @@ mod panics;
 mod processing;
 mod setup;
 
+pub use setup::{changed_path, failures_path, new_path, old_path};
+
 pub struct EmuTestRunner {
     formatter: Box<dyn EmuTestResultFormatter + Send + Sync>,
     options: EmuRunnerOptions,
