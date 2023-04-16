@@ -88,6 +88,11 @@ pub struct RunnerOutputContext {
     pub frame_output: Vec<FrameOutput>,
 }
 
+/// The output produced by a test.
+///
+/// A test can produce multiple instances of `FrameOutput`. This marks the test as a `sequence` test.
+/// This can be useful if you need to perform some inputs on your test rom, and want to periodically make `FrameOutputs` to
+/// ensure the intermediate results look correct as well.
 #[derive(Debug)]
 pub struct FrameOutput {
     pub tag: Option<String>,

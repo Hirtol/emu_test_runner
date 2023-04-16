@@ -56,6 +56,12 @@ impl EmuTestRunner {
     /// Run the given tests and pass the results to the `formatter`.
     ///
     /// Any panic that occurs during the test execution is caught and can be reported on by the `formatter`.
+    ///
+    /// # Arguments
+    /// * `emu_run` - Expects a function which, given a test and the associated in-memory ROM, runs the given ROM and
+    /// returns [FrameOutput] data.  A test can produce multiple instances of [FrameOutput]. This marks the test as a `sequence` test.
+    /// This can be useful if you need to perform some inputs on your test rom, and want to periodically make `FrameOutputs` to
+    /// ensure the intermediate results look correct as well.
     pub fn run_tests<F, I>(&self, tests: I, emu_run: F) -> anyhow::Result<()>
     where
         F: Fn(&TestCandidate, Vec<u8>) -> Vec<FrameOutput> + Send + Sync + std::panic::RefUnwindSafe,
