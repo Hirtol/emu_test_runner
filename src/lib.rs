@@ -135,7 +135,7 @@ impl EmuTestRunner {
 
         // Generate the path definitions for *all* the test's context frames.
         self.frame_and_path_definitions(&runner_output)
-            .map(|(frame, path_def)| match self.sub_process(frame, path_def) {
+            .map(|(frame, path_def)| match self.process_frame(frame, path_def) {
                 Ok(output) => EmuContext {
                     candidate: runner_output.candidate.clone(),
                     context: TestOutputContext {
@@ -154,7 +154,7 @@ impl EmuTestRunner {
             .collect()
     }
 
-    fn sub_process(&self, frame: &FrameOutput, path_def: PathDefinitions) -> anyhow::Result<TestOutputType> {
+    fn process_frame(&self, frame: &FrameOutput, path_def: PathDefinitions) -> anyhow::Result<TestOutputType> {
         let new_path = path_def.new_path()?;
         let old_path = path_def.old_path()?;
         let snapshot_path = path_def.snapshot_path()?;
@@ -174,11 +174,16 @@ impl EmuTestRunner {
             // Time to see if our snapshot is still correct
             let snapshot_data = image::open(&snapshot_path)?;
             if snapshot_data.as_bytes() != image_frame.as_bytes() {
-                let failure_path = path_def.failed_path()?;
-                std::fs::copy(&new_path, &failure_path)?;
+                let new_failure_path = path_def.failed_path_with_suffix("fail")?;
+                std::fs::copy(&new_path, &new_failure_path)?;
+
+                if self.options.copy_comparison_image {
+                    let expected_file_in_failure_path = path_def.failed_path_with_suffix("pass")?;
+                    std::fs::copy(&snapshot_path, expected_file_in_failure_path)?;
+                }
 
                 TestOutputType::Failure(TestOutputFailure {
-                    failure_path,
+                    failure_path: new_failure_path,
                     snapshot_path,
                     is_new: old_equals_data(snapshot_data.as_bytes()),
                 })
@@ -190,8 +195,13 @@ impl EmuTestRunner {
         } else {
             // Just check if there has been *any* change at all
             if !old_equals_data(image_frame.as_bytes()) {
-                let changed_path = path_def.changed_path()?;
+                let changed_path = path_def.changed_path_with_suffix("new")?;
                 std::fs::copy(&new_path, &changed_path)?;
+
+                if self.options.copy_comparison_image {
+                    let old_file_in_changed_path = path_def.changed_path_with_suffix("old")?;
+                    std::fs::copy(&old_path, old_file_in_changed_path)?;
+                }
 
                 TestOutputType::Changed(TestOutputChanged { changed_path, old_path })
             } else {
@@ -233,19 +243,14 @@ impl EmuTestRunner {
 
         runner_output.context.frame_output.iter().map(move |frame| {
             let frame_file_png = setup::rom_id_to_png(rom_id, frame.tag.as_deref());
-            let path_suffix = if create_subfolder {
-                Path::new(rom_id).join(frame_file_png)
-            } else {
-                Path::new(&frame_file_png).to_path_buf()
-            };
 
             (
                 frame,
                 PathDefinitions::new(
                     &self.options.output_path,
                     &self.options.snapshot_path,
-                    path_suffix,
-                    create_subfolder,
+                    create_subfolder.then(|| Path::new(rom_id)),
+                    frame_file_png,
                 ),
             )
         })

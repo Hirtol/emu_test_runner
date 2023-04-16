@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
-
 use crate::outputs::{
     TestChanged, TestError, TestFailed, TestOutput, TestOutputContext, TestOutputType, TestPassed, TestUnchanged,
 };
@@ -75,45 +73,61 @@ impl TestReport {
 pub struct PathDefinitions<'a> {
     output_path: &'a Path,
     snapshot_path: &'a Path,
-    path_suffix: PathBuf,
-    create_subfolder: bool,
+    subfolder: Option<&'a Path>,
+    file_name: String,
 }
 
+#[allow(dead_code)]
 impl<'a> PathDefinitions<'a> {
-    pub fn new(output_path: &'a Path, snapshot_path: &'a Path, path_suffix: PathBuf, create_subfolder: bool) -> Self {
+    pub fn new(output_path: &'a Path, snapshot_path: &'a Path, subfolder: Option<&'a Path>, file_name: String) -> Self {
         PathDefinitions {
             output_path,
             snapshot_path,
-            path_suffix,
-            create_subfolder,
+            subfolder,
+            file_name,
         }
     }
 
     pub fn new_path(&self) -> anyhow::Result<PathBuf> {
-        self.check_and_create(crate::new_path(self.output_path).join(&self.path_suffix))
+        self.check_and_create(&crate::new_path(self.output_path), &self.file_name)
     }
 
     pub fn old_path(&self) -> anyhow::Result<PathBuf> {
-        self.check_and_create(crate::old_path(self.output_path).join(&self.path_suffix))
+        self.check_and_create(&crate::old_path(self.output_path), &self.file_name)
     }
 
     pub fn changed_path(&self) -> anyhow::Result<PathBuf> {
-        self.check_and_create(crate::changed_path(self.output_path).join(&self.path_suffix))
+        self.check_and_create(&crate::changed_path(self.output_path), &self.file_name)
+    }
+
+    pub fn changed_path_with_suffix(&self, suffix: &str) -> anyhow::Result<PathBuf> {
+        let suffix_name = self.file_name.replace(".png", &format!("_{}.png", suffix));
+
+        self.check_and_create(&crate::changed_path(self.output_path), &suffix_name)
     }
 
     pub fn failed_path(&self) -> anyhow::Result<PathBuf> {
-        self.check_and_create(crate::failures_path(self.output_path).join(&self.path_suffix))
+        self.check_and_create(&crate::failures_path(self.output_path), &self.file_name)
+    }
+
+    pub fn failed_path_with_suffix(&self, suffix: &str) -> anyhow::Result<PathBuf> {
+        let suffix_name = self.file_name.replace(".png", &format!("_{}.png", suffix));
+
+        self.check_and_create(&crate::failures_path(self.output_path), &suffix_name)
     }
 
     pub fn snapshot_path(&self) -> anyhow::Result<PathBuf> {
-        self.check_and_create(self.snapshot_path.join(&self.path_suffix))
+        self.check_and_create(self.snapshot_path, &self.file_name)
     }
 
-    fn check_and_create(&self, path: PathBuf) -> anyhow::Result<PathBuf> {
-        if self.create_subfolder {
-            std::fs::create_dir_all(path.parent().context("Couldn't retrieve parent")?)?;
-        }
+    fn check_and_create(&self, path: &Path, filename: &str) -> anyhow::Result<PathBuf> {
+        if let Some(folder) = self.subfolder.as_ref() {
+            let folder_path = path.join(folder);
+            std::fs::create_dir_all(&folder_path)?;
 
-        Ok(path)
+            Ok(folder_path.join(filename))
+        } else {
+            Ok(path.join(filename))
+        }
     }
 }

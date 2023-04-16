@@ -8,8 +8,10 @@ pub struct EmuRunnerOptions {
     pub num_threads: NonZeroUsize,
     pub expected_frame_width: usize,
     pub expected_frame_height: usize,
-
+    /// Whenever a test has more than 1 produced image this will put those together in a sub-folder.
     pub put_sequence_tests_in_subfolder: bool,
+    /// Put a copy of a comparison image in the failed/changed directory for easy comparison.
+    pub copy_comparison_image: bool,
 }
 
 impl Default for EmuRunnerOptions {
@@ -21,6 +23,7 @@ impl Default for EmuRunnerOptions {
             expected_frame_width: 240,
             expected_frame_height: 160,
             put_sequence_tests_in_subfolder: true,
+            copy_comparison_image: true,
         }
     }
 }
