@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 pub struct TestCandidate {
     pub rom_id: String,
     pub rom_path: PathBuf,
-    pub is_sequence_test: bool,
 }
 
 impl TestCandidate {
@@ -15,11 +14,10 @@ impl TestCandidate {
     /// * `id` should be unique, and the path should point to a ROM that can be loaded by the emulator under test.
     /// * `is_sequence_test` should be `true` if this test case will produce multiple snapshots. These snapshots will be
     /// compared individually (e.g, can have a mix of expected/non-expected snapshots).
-    pub fn new(id: impl Into<String>, path: impl Into<PathBuf>, is_sequence_test: bool) -> TestCandidate {
+    pub fn new(id: impl Into<String>, path: impl Into<PathBuf>) -> TestCandidate {
         Self {
             rom_id: id.into(),
             rom_path: path.into(),
-            is_sequence_test,
         }
     }
 
@@ -34,7 +32,7 @@ impl TestCandidate {
 
         Ok(files
             .into_iter()
-            .map(|path| TestCandidate::new(get_rom_fs_id(&path).into_owned(), path, false))
+            .map(|path| TestCandidate::new(get_rom_fs_id(&path).into_owned(), path))
             .collect())
     }
 }

@@ -90,9 +90,10 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
 
         // Final Report
         println!(
-            "=== Report - Ran {} Tests in {:.2?} ===",
+            "=== Report - Ran {} Sub-Tests in {:.2?} (Out of {} General Tests) ===",
             report.test_outputs.len().green(),
-            time_taken.purple()
+            time_taken.purple(),
+            report.original_tests_count.green()
         );
 
         let newly_passing = report.passed.iter().filter(|p| p.context.output.is_new).count();
