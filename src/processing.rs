@@ -1,21 +1,10 @@
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+
+use anyhow::Context;
 
 use crate::outputs::{
-    TestChanged, TestError, TestFailed, TestOutput, TestOutputContext, TestOutputError, TestOutputType, TestPassed,
-    TestUnchanged,
+    TestChanged, TestError, TestFailed, TestOutput, TestOutputContext, TestOutputType, TestPassed, TestUnchanged,
 };
-use crate::RunnerError;
-
-impl From<RunnerError> for TestOutput {
-    fn from(value: RunnerError) -> Self {
-        value.owned_map(|error| TestOutputContext {
-            time_taken: None,
-            output: TestOutputType::Error(TestOutputError {
-                reason: Arc::new(error),
-            }),
-        })
-    }
-}
 
 pub struct TestReport {
     pub original_tests_count: usize,
@@ -80,5 +69,51 @@ impl TestReport {
             changed,
             errors,
         }
+    }
+}
+
+pub struct PathDefinitions<'a> {
+    output_path: &'a Path,
+    snapshot_path: &'a Path,
+    path_suffix: PathBuf,
+    create_subfolder: bool,
+}
+
+impl<'a> PathDefinitions<'a> {
+    pub fn new(output_path: &'a Path, snapshot_path: &'a Path, path_suffix: PathBuf, create_subfolder: bool) -> Self {
+        PathDefinitions {
+            output_path,
+            snapshot_path,
+            path_suffix,
+            create_subfolder,
+        }
+    }
+
+    pub fn new_path(&self) -> anyhow::Result<PathBuf> {
+        self.check_and_create(crate::new_path(self.output_path).join(&self.path_suffix))
+    }
+
+    pub fn old_path(&self) -> anyhow::Result<PathBuf> {
+        self.check_and_create(crate::old_path(self.output_path).join(&self.path_suffix))
+    }
+
+    pub fn changed_path(&self) -> anyhow::Result<PathBuf> {
+        self.check_and_create(crate::changed_path(self.output_path).join(&self.path_suffix))
+    }
+
+    pub fn failed_path(&self) -> anyhow::Result<PathBuf> {
+        self.check_and_create(crate::failures_path(self.output_path).join(&self.path_suffix))
+    }
+
+    pub fn snapshot_path(&self) -> anyhow::Result<PathBuf> {
+        self.check_and_create(self.snapshot_path.join(&self.path_suffix))
+    }
+
+    fn check_and_create(&self, path: PathBuf) -> anyhow::Result<PathBuf> {
+        if self.create_subfolder {
+            std::fs::create_dir_all(path.parent().context("Couldn't retrieve parent")?)?;
+        }
+
+        Ok(path)
     }
 }

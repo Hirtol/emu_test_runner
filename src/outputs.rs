@@ -14,6 +14,7 @@ pub type TestError = EmuContext<TestOutputError>;
 pub type TestChanged = EmuContext<TestOutputContext<TestOutputChanged>>;
 
 pub type RunnerError = EmuContext<anyhow::Error>;
+/// One [RunnerOutput] is a single test, with potentially multiple sub-tests due to being a sequence-test.
 pub type RunnerOutput = EmuContext<RunnerOutputContext>;
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,10 @@
 use std::path::{Path, PathBuf};
 
+pub const NEW_DIR_NAME: &str = "new";
+pub const OLD_DIR_NAME: &str = "old";
+pub const CHANGED_DIR_NAME: &str = "changed";
+pub const FAILED_DIR_NAME: &str = "failures";
+
 /// Will clean and setup the directory structure in the output directory as follows:
 ///
 ///
@@ -30,20 +35,27 @@ pub fn setup_output_directory(output: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Setup the directory where one can save the Snapshots for tests.
+///
+/// A test with an associated snapshot will fail if it starts to differ from the established baseline.
+pub fn setup_snapshot_directory(snapshot: &Path) -> anyhow::Result<()> {
+    Ok(std::fs::create_dir_all(snapshot)?)
+}
+
 pub fn old_path(output: &Path) -> PathBuf {
-    output.join("old")
+    output.join(OLD_DIR_NAME)
 }
 
 pub fn new_path(output: &Path) -> PathBuf {
-    output.join("new")
+    output.join(NEW_DIR_NAME)
 }
 
 pub fn changed_path(output: &Path) -> PathBuf {
-    output.join("changed")
+    output.join(CHANGED_DIR_NAME)
 }
 
 pub fn failures_path(output: &Path) -> PathBuf {
-    output.join("failures")
+    output.join(FAILED_DIR_NAME)
 }
 
 pub fn rom_id_to_png(rom_id: &str, suffix: Option<&str>) -> String {
@@ -52,11 +64,4 @@ pub fn rom_id_to_png(rom_id: &str, suffix: Option<&str>) -> String {
     } else {
         format!("{rom_id}.png")
     }
-}
-
-/// Setup the directory where one can save the Snapshots for tests.
-///
-/// A test with an associated snapshot will fail if it starts to differ from the established baseline.
-pub fn setup_snapshot_directory(snapshot: &Path) -> anyhow::Result<()> {
-    Ok(std::fs::create_dir_all(snapshot)?)
 }
