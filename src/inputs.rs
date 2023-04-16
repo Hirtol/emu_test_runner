@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 pub struct TestCandidate {
-    pub(crate) rom_id: String,
-    pub(crate) rom_path: PathBuf,
+    pub rom_id: String,
+    pub rom_path: PathBuf,
 }
 
 impl TestCandidate {
@@ -14,7 +14,10 @@ impl TestCandidate {
         }
     }
 
-    pub fn find_in_directory(path: impl AsRef<Path>, extension: impl AsRef<str>) -> anyhow::Result<Vec<TestCandidate>> {
+    pub fn find_all_in_directory(
+        path: impl AsRef<Path>,
+        extension: impl AsRef<str>,
+    ) -> anyhow::Result<Vec<TestCandidate>> {
         let files = list_files_with_extensions(path.as_ref(), extension.as_ref())?;
 
         Ok(files

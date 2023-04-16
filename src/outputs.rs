@@ -21,12 +21,12 @@ impl TestReport {
             let ctx = report.context;
 
             match ctx.output {
-                TestOutputType::Unchanged => unchanged.push(TestUnchanged {
+                TestOutputType::Unchanged(same) => unchanged.push(TestUnchanged {
                     rom_path,
                     rom_id,
                     context: TestOutputContext {
                         time_taken: ctx.time_taken,
-                        output: (),
+                        output: same,
                     },
                 }),
                 TestOutputType::Changed(changes) => changed.push(TestChanged {
@@ -45,12 +45,12 @@ impl TestReport {
                         output: fail,
                     },
                 }),
-                TestOutputType::Passed => passed.push(TestPassed {
+                TestOutputType::Passed(pass) => passed.push(TestPassed {
                     rom_path,
                     rom_id,
                     context: TestOutputContext {
                         time_taken: ctx.time_taken,
-                        output: (),
+                        output: pass,
                     },
                 }),
                 TestOutputType::Error(error) => errors.push(TestError {
@@ -72,8 +72,8 @@ impl TestReport {
     }
 }
 
-pub type TestPassed = EmuContext<TestOutputContext<()>>;
-pub type TestUnchanged = EmuContext<TestOutputContext<()>>;
+pub type TestPassed = EmuContext<TestOutputContext<TestOutputPassed>>;
+pub type TestUnchanged = EmuContext<TestOutputContext<TestOutputUnchanged>>;
 pub type TestFailed = EmuContext<TestOutputContext<TestOutputFailure>>;
 pub type TestError = EmuContext<TestOutputError>;
 pub type TestChanged = EmuContext<TestOutputContext<TestOutputChanged>>;
@@ -113,17 +113,28 @@ pub struct TestOutputContext<T> {
 
 #[derive(Debug, Clone)]
 pub enum TestOutputType {
-    Unchanged,
+    Unchanged(TestOutputUnchanged),
     Changed(TestOutputChanged),
     Failure(TestOutputFailure),
-    Passed,
+    Passed(TestOutputPassed),
     Error(TestOutputError),
+}
+
+#[derive(Debug, Clone)]
+pub struct TestOutputUnchanged {
+    pub newly_added: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TestOutputPassed {
+    pub is_new: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct TestOutputFailure {
     pub failure_path: PathBuf,
     pub snapshot_path: PathBuf,
+    pub is_new: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -5,7 +5,8 @@ use image::{EncodableLayout, ImageBuffer};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::outputs::{
-    TestOutput, TestOutputChanged, TestOutputContext, TestOutputError, TestOutputFailure, TestOutputType,
+    TestOutput, TestOutputChanged, TestOutputContext, TestOutputError, TestOutputFailure, TestOutputPassed,
+    TestOutputType, TestOutputUnchanged,
 };
 use crate::{setup, RunnerError, RunnerOutput};
 
@@ -36,13 +37,22 @@ pub fn process_results(
 
                 let result_name = format!("{}.png", &runner_output.rom_id);
                 let new_path = setup::new_path(output).join(&result_name);
+                let old_path = setup::old_path(output).join(&result_name);
 
                 image_frame.save(&new_path)?;
+                let old_equals_data = |new_data: &[u8]| {
+                    if old_path.exists() {
+                        image::open(&old_path)
+                            .map(|data| data.as_bytes() == new_data)
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                };
 
                 let output = if let Some(snapshot) = setup::has_snapshot(&runner_output.rom_id, snapshot_dir) {
                     // Time to see if our snapshot is still correct
                     let snapshot_data = image::open(&snapshot)?;
-
                     if snapshot_data.as_bytes() != image_frame.as_bytes() {
                         let failure_path = setup::failures_path(output).join(&result_name);
                         std::fs::copy(&new_path, &failure_path)?;
@@ -50,27 +60,24 @@ pub fn process_results(
                         TestOutputType::Failure(TestOutputFailure {
                             failure_path,
                             snapshot_path: snapshot,
+                            is_new: old_equals_data(snapshot_data.as_bytes()),
                         })
                     } else {
-                        TestOutputType::Passed
+                        TestOutputType::Passed(TestOutputPassed {
+                            is_new: !old_equals_data(snapshot_data.as_bytes()),
+                        })
                     }
                 } else {
                     // Just check if there has been *any* change at all
-                    let old_path = setup::old_path(output).join(&result_name);
+                    if !old_equals_data(image_frame.as_bytes()) {
+                        let changed_path = setup::changed_path(output).join(&result_name);
+                        std::fs::copy(&new_path, &changed_path)?;
 
-                    if old_path.exists() {
-                        let old_data = image::open(&old_path)?;
-
-                        if old_data.as_bytes() != image_frame.as_bytes() {
-                            let changed_path = setup::changed_path(output).join(&result_name);
-                            std::fs::copy(&new_path, &changed_path)?;
-
-                            TestOutputType::Changed(TestOutputChanged { changed_path, old_path })
-                        } else {
-                            TestOutputType::Unchanged
-                        }
+                        TestOutputType::Changed(TestOutputChanged { changed_path, old_path })
                     } else {
-                        TestOutputType::Unchanged
+                        TestOutputType::Unchanged(TestOutputUnchanged {
+                            newly_added: !old_path.exists(),
+                        })
                     }
                 };
 
