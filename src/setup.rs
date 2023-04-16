@@ -46,8 +46,8 @@ pub fn failures_path(output: &Path) -> PathBuf {
     output.join("failures")
 }
 
-pub fn has_snapshot(rom_id: &str, snapshot_dir: &Path) -> Option<PathBuf> {
-    let snapshot = snapshot_dir.join(rom_id_to_png(rom_id));
+pub fn has_snapshot(rom_file_name: &str, snapshot_dir: &Path) -> Option<PathBuf> {
+    let snapshot = snapshot_dir.join(rom_file_name);
 
     if snapshot.exists() {
         Some(snapshot)
@@ -56,8 +56,12 @@ pub fn has_snapshot(rom_id: &str, snapshot_dir: &Path) -> Option<PathBuf> {
     }
 }
 
-pub fn rom_id_to_png(rom_id: &str) -> String {
-    format!("{rom_id}.png")
+pub fn rom_id_to_png(rom_id: &str, suffix: Option<&str>) -> String {
+    if let Some(suffix) = suffix {
+        format!("{rom_id}_{suffix}.png")
+    } else {
+        format!("{rom_id}.png")
+    }
 }
 
 /// Setup the directory where one can save the Snapshots for tests.

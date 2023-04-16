@@ -21,19 +21,21 @@ pub struct EmuContext<T> {
 }
 
 impl<T> EmuContext<T> {
-    pub fn map<E, F: FnOnce(T) -> E>(self, op: F) -> EmuContext<E> {
+    pub fn map<E, F: FnOnce(&T) -> E>(&self, op: F) -> EmuContext<E> {
+        EmuContext {
+            rom_path: self.rom_path.clone(),
+            rom_id: self.rom_id.clone(),
+            context: op(&self.context),
+        }
+    }
+
+    pub fn owned_map<E, F: FnOnce(T) -> E>(self, op: F) -> EmuContext<E> {
         EmuContext {
             rom_path: self.rom_path,
             rom_id: self.rom_id,
             context: op(self.context),
         }
     }
-}
-
-#[derive(Debug)]
-pub struct RunnerOutputContext {
-    pub time_taken: Duration,
-    pub frame_output: RgbaFrame,
 }
 
 #[derive(Debug, Clone)]
@@ -79,10 +81,22 @@ pub struct TestOutputError {
     pub reason: Arc<anyhow::Error>,
 }
 
+#[derive(Debug)]
+pub struct RunnerOutputContext {
+    pub time_taken: Duration,
+    pub frame_output: Vec<FrameOutput>,
+}
+
+#[derive(Debug)]
+pub struct FrameOutput {
+    pub tag: Option<String>,
+    pub frame: RgbaFrame,
+}
+
 /// A single frame from the emulator, with the implicit assumption that:
-/// 
+///
 /// `frame.len() == emu.FRAME_WIDTH * emu.FRAME_HEIGHT`
-/// 
+///
 /// Bytes are expected in RGBA format, so one pixel is 32 bits.
 #[derive(Debug)]
 pub struct RgbaFrame(pub Vec<u8>);

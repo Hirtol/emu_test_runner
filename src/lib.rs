@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use crate::formatters::EmuTestResultFormatter;
 use crate::inputs::TestCandidate;
 use crate::options::EmuRunnerOptions;
-use crate::outputs::{RgbaFrame, RunnerError, RunnerOutput, RunnerOutputContext};
+use crate::outputs::{FrameOutput, RgbaFrame, RunnerError, RunnerOutput, RunnerOutputContext};
 
 pub mod formatters;
 pub mod inputs;
@@ -54,7 +54,7 @@ impl EmuTestRunner {
     /// Any panic that occurs during the test execution is caught and can be reported on by the `formatter`.
     pub fn run_tests<F, I>(&self, tests: I, emu_run: F) -> anyhow::Result<()>
     where
-        F: Fn(&TestCandidate, Vec<u8>) -> RgbaFrame + Send + Sync + std::panic::RefUnwindSafe,
+        F: Fn(&TestCandidate, Vec<u8>) -> Vec<FrameOutput> + Send + Sync + std::panic::RefUnwindSafe,
         I: ExactSizeIterator<Item = TestCandidate> + Send,
     {
         self.formatter.handle_start(tests.len())?;
@@ -80,7 +80,7 @@ impl EmuTestRunner {
 
     fn run_tests_in_panic_handler<F, I>(&self, tests: I, emu_run: F) -> Vec<Result<RunnerOutput, RunnerError>>
     where
-        F: Fn(&TestCandidate, Vec<u8>) -> RgbaFrame + Send + Sync + std::panic::RefUnwindSafe,
+        F: Fn(&TestCandidate, Vec<u8>) -> Vec<FrameOutput> + Send + Sync + std::panic::RefUnwindSafe,
         I: ExactSizeIterator<Item = TestCandidate> + Send,
     {
         tests

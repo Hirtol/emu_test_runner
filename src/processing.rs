@@ -5,8 +5,9 @@ use image::{EncodableLayout, ImageBuffer};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::outputs::{
-    TestChanged, TestError, TestFailed, TestOutput, TestOutputChanged, TestOutputContext, TestOutputError,
-    TestOutputFailure, TestOutputPassed, TestOutputType, TestOutputUnchanged, TestPassed, TestUnchanged,
+    EmuContext, FrameOutput, TestChanged, TestError, TestFailed, TestOutput, TestOutputChanged, TestOutputContext,
+    TestOutputError, TestOutputFailure, TestOutputPassed, TestOutputType, TestOutputUnchanged, TestPassed,
+    TestUnchanged,
 };
 use crate::{setup, RunnerError, RunnerOutput};
 
@@ -19,23 +20,21 @@ pub fn process_results(
 ) -> Vec<TestOutput> {
     results
         .into_par_iter()
-        .map(|runner_output| {
+        .flat_map(|runner_output| {
             let runner_output = match runner_output {
                 Ok(output) => output,
-                Err(e) => return e.into(),
+                Err(e) => return vec![e.into()],
             };
-            let lambda = || {
-                let image_frame: ImageBuffer<image::Rgba<u8>, &[u8]> = if let Some(img) = image::ImageBuffer::from_raw(
-                    frame_width as u32,
-                    frame_height as u32,
-                    runner_output.context.frame_output.0.as_slice(),
-                ) {
+            let lambda = |frame: FrameOutput| {
+                let image_frame: ImageBuffer<image::Rgba<u8>, &[u8]> = if let Some(img) =
+                    image::ImageBuffer::from_raw(frame_width as u32, frame_height as u32, frame.frame.0.as_slice())
+                {
                     img
                 } else {
                     anyhow::bail!("Failed to turn framebuffer to dynamic image")
                 };
 
-                let result_name = setup::rom_id_to_png(&runner_output.rom_id);
+                let result_name = setup::rom_id_to_png(&runner_output.rom_id, frame.tag.as_deref());
                 let new_path = setup::new_path(output).join(&result_name);
                 let old_path = setup::old_path(output).join(&result_name);
 
@@ -50,7 +49,7 @@ pub fn process_results(
                     }
                 };
 
-                let output = if let Some(snapshot) = setup::has_snapshot(&runner_output.rom_id, snapshot_dir) {
+                let output = if let Some(snapshot) = setup::has_snapshot(&result_name, snapshot_dir) {
                     // Time to see if our snapshot is still correct
                     let snapshot_data = image::open(&snapshot)?;
                     if snapshot_data.as_bytes() != image_frame.as_bytes() {
@@ -84,23 +83,36 @@ pub fn process_results(
                 Ok(output)
             };
 
-            match lambda() {
-                Ok(output) => runner_output.map(|context| TestOutputContext {
-                    time_taken: Some(context.time_taken),
-                    output,
-                }),
-                Err(e) => runner_output.map(|context| TestOutputContext {
-                    time_taken: Some(context.time_taken),
-                    output: TestOutputType::Error(TestOutputError { reason: Arc::new(e) }),
-                }),
-            }
+            runner_output
+                .context
+                .frame_output
+                .into_iter()
+                .map(|frame| match lambda(frame) {
+                    Ok(output) => EmuContext {
+                        rom_path: runner_output.rom_path.clone(),
+                        rom_id: runner_output.rom_id.clone(),
+                        context: TestOutputContext {
+                            time_taken: Some(runner_output.context.time_taken),
+                            output,
+                        },
+                    },
+                    Err(e) => EmuContext {
+                        rom_path: runner_output.rom_path.clone(),
+                        rom_id: runner_output.rom_id.clone(),
+                        context: TestOutputContext {
+                            time_taken: Some(runner_output.context.time_taken),
+                            output: TestOutputType::Error(TestOutputError { reason: Arc::new(e) }),
+                        },
+                    },
+                })
+                .collect()
         })
         .collect()
 }
 
 impl From<RunnerError> for TestOutput {
     fn from(value: RunnerError) -> Self {
-        value.map(|error| TestOutputContext {
+        value.owned_map(|error| TestOutputContext {
             time_taken: None,
             output: TestOutputType::Error(TestOutputError {
                 reason: Arc::new(error),
