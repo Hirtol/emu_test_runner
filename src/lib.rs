@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use image::{EncodableLayout, ImageBuffer, Rgba};
@@ -39,9 +39,6 @@ impl EmuTestRunner {
         formatter: Box<dyn EmuTestResultFormatter + Send + Sync>,
         options: EmuRunnerOptions,
     ) -> anyhow::Result<Self> {
-        setup::setup_output_directory(&options.output_path)?;
-        setup::setup_snapshot_directory(&options.snapshot_path)?;
-
         let thread_pool = rayon::ThreadPoolBuilder::new()
             .num_threads(options.num_threads.get())
             .build()?;
@@ -62,11 +59,19 @@ impl EmuTestRunner {
     /// returns [FrameOutput] data.  A test can produce multiple instances of [FrameOutput]. This marks the test as a `sequence` test.
     /// This can be useful if you need to perform some inputs on your test rom, and want to periodically make `FrameOutputs` to
     /// ensure the intermediate results look correct as well.
+    ///
+    /// # Returns
+    /// An error if any tests were marked as `failed`. Note that crashing tests *do not* by default count as such, and will
+    /// thus not return an error.
     pub fn run_tests<F, I>(&self, tests: I, emu_run: F) -> anyhow::Result<()>
     where
         F: Fn(&TestCandidate, Vec<u8>) -> Vec<FrameOutput> + Send + Sync + std::panic::RefUnwindSafe,
         I: ExactSizeIterator<Item = TestCandidate> + Send,
     {
+        if let Some(timeout) = self.options.timeout {
+            start_timeout_killer(timeout);
+        }
+
         let start = Instant::now();
         let test_len = tests.len();
         self.formatter.handle_start(test_len)?;
@@ -83,6 +88,11 @@ impl EmuTestRunner {
                     .collect::<Vec<_>>()
             })
         });
+
+        // Prepare the output by deleting the old stuff.
+        setup::setup_output_directory(&self.options.output_path)?;
+        setup::setup_snapshot_directory(&self.options.snapshot_path)?;
+
         let test_results = self.thread_pool.install(|| {
             frame_results
                 .into_par_iter()
@@ -92,7 +102,13 @@ impl EmuTestRunner {
 
         let report = TestReport::new(test_len, test_results);
 
-        self.formatter.handle_complete(&report, start.elapsed())
+        self.formatter.handle_complete(&report, start.elapsed())?;
+
+        if report.fails.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("There were {} failed tests", report.fails.len());
+        }
     }
 
     fn run_test_in_panic_handler<F>(&self, candidate: TestCandidate, emu_run: &F) -> Result<RunnerOutput, RunnerError>
@@ -265,4 +281,12 @@ impl EmuTestRunner {
             )
         })
     }
+}
+
+fn start_timeout_killer(wait: Duration) {
+    std::thread::spawn(move || {
+        std::thread::sleep(wait);
+        println!("Timeout reached, killing process");
+        std::process::exit(1)
+    });
 }

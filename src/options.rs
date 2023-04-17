@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct EmuRunnerOptions {
@@ -12,6 +13,8 @@ pub struct EmuRunnerOptions {
     pub put_sequence_tests_in_subfolder: bool,
     /// Put a copy of a comparison image in the failed/changed directory for easy comparison.
     pub copy_comparison_image: bool,
+    /// How long the entire test suite is allowed to take before the process is forcefully killed.
+    pub timeout: Option<Duration>,
 }
 
 impl Default for EmuRunnerOptions {
@@ -24,6 +27,7 @@ impl Default for EmuRunnerOptions {
             expected_frame_height: 160,
             put_sequence_tests_in_subfolder: true,
             copy_comparison_image: true,
+            timeout: Some(Duration::from_secs(15)),
         }
     }
 }
