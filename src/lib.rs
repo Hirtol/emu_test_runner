@@ -75,7 +75,11 @@ impl EmuTestRunner {
             self.thread_pool.install(|| {
                 tests
                     .par_bridge()
-                    .map(|candidate| self.run_test_in_panic_handler(candidate, &emu_run))
+                    .map(|candidate| {
+                        let _ = self.formatter.handle_test_start(&candidate);
+
+                        self.run_test_in_panic_handler(candidate, &emu_run)
+                    })
                     .collect::<Vec<_>>()
             })
         });
@@ -121,7 +125,7 @@ impl EmuTestRunner {
 
         let result = runner_output.map_err(|e| RunnerError { candidate, context: e });
 
-        let _ = self.formatter.handle_test_progress(result.as_ref());
+        let _ = self.formatter.handle_test_finish(result.as_ref());
 
         result
     }

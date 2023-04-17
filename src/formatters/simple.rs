@@ -1,12 +1,17 @@
 use crate::formatters::EmuTestResultFormatter;
+use crate::inputs::TestCandidate;
 use crate::outputs::{RunnerError, RunnerOutput};
 use crate::processing::TestReport;
+use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::{CssColors, OwoColorize};
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Default)]
 pub struct SimpleConsoleFormatter {
     progress: Option<indicatif::ProgressBar>,
+    current_tests: Arc<Mutex<HashSet<String>>>,
 }
 
 impl SimpleConsoleFormatter {
@@ -20,7 +25,10 @@ impl SimpleConsoleFormatter {
     }
 
     pub fn with_progress(mut self, total_tests: u64) -> Self {
-        self.progress = Some(indicatif::ProgressBar::new(total_tests));
+        self.progress = Some(
+            indicatif::ProgressBar::new(total_tests)
+                .with_style(ProgressStyle::with_template("{wide_bar} {pos}/{len} - {msg}").expect("Invalid template")),
+        );
         self
     }
 }
@@ -31,9 +39,28 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
         Ok(())
     }
 
-    fn handle_test_progress(&self, _test_complete: Result<&RunnerOutput, &RunnerError>) -> anyhow::Result<()> {
+    fn handle_test_start(&self, test: &TestCandidate) -> anyhow::Result<()> {
         if let Some(progress) = self.progress.as_ref() {
-            progress.inc(1)
+            let mut lock = self.current_tests.lock().unwrap();
+
+            lock.insert(test.rom_id.clone());
+            self.update_progress_message(progress, lock.iter());
+        }
+
+        Ok(())
+    }
+
+    fn handle_test_finish(&self, _test_complete: Result<&RunnerOutput, &RunnerError>) -> anyhow::Result<()> {
+        if let Some(progress) = self.progress.as_ref() {
+            progress.inc(1);
+
+            let mut lock = self.current_tests.lock().unwrap();
+            let rom_id = match _test_complete {
+                Ok(id) => &id.candidate.rom_id,
+                Err(id) => &id.candidate.rom_id,
+            };
+            lock.remove(rom_id);
+            self.update_progress_message(progress, lock.iter());
         }
 
         Ok(())
@@ -153,5 +180,13 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
         );
 
         Ok(())
+    }
+}
+
+impl SimpleConsoleFormatter {
+    fn update_progress_message<'a>(&self, progress: &ProgressBar, set: impl Iterator<Item = &'a String>) {
+        let message = set.take(3).map(|s| &**s).collect::<Vec<&str>>().join(",");
+
+        progress.set_message(format!("Running: {}...", &message[..(message.len().min(10))]));
     }
 }

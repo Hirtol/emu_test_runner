@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::inputs::TestCandidate;
 pub use indicatif;
 
 use crate::outputs::{RunnerError, RunnerOutput};
@@ -11,12 +12,17 @@ pub trait EmuTestResultFormatter {
     /// Create the start of a report, usually indicating how many tests are about to be ran.
     fn handle_start(&self, test_count: usize) -> anyhow::Result<()>;
 
+    /// Called whenever a test is about to start executing
+    ///
+    /// Note that this can be called from several threads at the same time.
+    fn handle_test_start(&self, test: &TestCandidate) -> anyhow::Result<()>;
+
     /// Called whenever a test has been completed.
     ///
     /// Note that this can be called from several threads at the same time.
     ///
     /// Can be used to show a progress bar if desired.
-    fn handle_test_progress(&self, test_complete: Result<&RunnerOutput, &RunnerError>) -> anyhow::Result<()>;
+    fn handle_test_finish(&self, test_complete: Result<&RunnerOutput, &RunnerError>) -> anyhow::Result<()>;
 
     /// Handle the final report, containing all tests and the results thereof.
     ///
