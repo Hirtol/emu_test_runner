@@ -117,7 +117,7 @@ impl EmuTestResultFormatter for SimpleConsoleFormatter {
 
         // Final Report
         println!(
-            "=== Report - Ran {} Sub-Tests in {:.2?} (Out of {} General Tests) ===",
+            "=== Report - Ran {} Test-cases in {:.2?} (Out of {} Tests) ===",
             report.test_outputs.len().green(),
             time_taken.purple(),
             report.original_tests_count.green()
